@@ -1,0 +1,3598 @@
+{
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "// Automatically generate standard W3C traceparent (ADR-010) and X-Trace-Id",
+          "function generateHex(len) {",
+          "    let result = '';",
+          "    const chars = '0123456789abcdef';",
+          "    for (let i = 0; i < len; i++) {",
+          "        result += chars.charAt(Math.floor(Math.random() * chars.length));",
+          "    }",
+          "    return result;",
+          "}",
+          "const traceId = generateHex(32);",
+          "const spanId = generateHex(16);",
+          "const traceparent = `00-${traceId}-${spanId}-01`;",
+          "pm.request.headers.upsert({ key: 'traceparent', value: traceparent });",
+          "pm.request.headers.upsert({ key: 'X-Trace-Id', value: traceId });",
+          "pm.environment.set('currentTraceId', traceId);"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "info": {
+    "_exporter_id": "39879181",
+    "_postman_id": "c1d3f5a7-2b4c-4e6f-8a9b-0c1d2e3f4a5b",
+    "description": "Enterprise-grade E2E Postman Suite for the IT Service Request Service Domain (BIAN-aligned, ADR-001/005/013/019/030/031/032/033/034). Drafts a catalog item with questions and a fulfilment target, updates it while DRAFT, publishes it, refuses a duplicate code whatever its case and an edit of a published item, then makes a request from it (a snapshot of the item, SLA pending), assigns, comments publicly and internally, starts fulfilment, fulfils with notes (the SLA is met), closes, reads the audit ledger in order, retires the item and shows the request untouched. A second folder proves self-service: a REQUESTER sees only the published catalog and files on their own behalf, sees only their own requests and no internal notes, cannot work a request, decide an approval or manage the catalog (403 ERR-SRQ-00403), and another requester or tenant gets a 404. Negative cases cover validation of answers and questions, illegal transitions (409), a retired item, tenant isolation and the absence of DELETE, with RFC 7807 error_code assertions. The approval path crosses into workflow-approval-service and is proven by the platform smoke (service-request-smoke). It files its own catalog under its own generated tenant id (srqOrganisationId), so it needs no organisationId from the Party Reference Data Directory.",
+    "name": "IT Service Request Service - Catalog and Request Suite",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Health status is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Health Check (Aggregated)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ],
+              "raw": "{{base_url}}/health"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Liveness status is UP or UNKNOWN (no probe contributors registered)', () => pm.expect(['UP', 'UNKNOWN']).to.include(pm.response.json().status));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Liveness Probe",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "liveness"
+              ],
+              "raw": "{{base_url}}/health/liveness"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Readiness status is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Readiness Probe",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "readiness"
+              ],
+              "raw": "{{base_url}}/health/readiness"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Contains JVM metrics', () => pm.expect(pm.response.text()).to.include('jvm_memory'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Prometheus Metrics",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "prometheus"
+              ],
+              "raw": "{{base_url}}/prometheus"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns Swagger UI HTML', () => pm.expect(pm.response.text()).to.include('swagger-ui'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Swagger UI",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "swagger-ui",
+                "index.html"
+              ],
+              "raw": "{{base_url}}/swagger-ui/index.html"
+            }
+          }
+        }
+      ],
+      "name": "00. Infrastructure & Telemetry"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.environment.set('srqOrganisationId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.environment.set('srqUserId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.environment.set('srqOtherUserId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.environment.set('srqStaffRequesterId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.environment.set('srqAssigneeId', pm.variables.replaceIn('{{$guid}}'));"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('DRAFT, code upper-cased, two questions', () => {",
+                  "    pm.expect(json.status).to.eql('DRAFT');",
+                  "    pm.expect(json.code).to.eql('LAPTOP');",
+                  "    pm.expect(json.fields).to.have.lengthOf(2);",
+                  "});",
+                  "pm.environment.set('catalogItemId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Initiate CatalogItem (staff, DRAFT, two questions, 72h target, no approval)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"laptop\",\n  \"name\": \"New laptop\",\n  \"description\": \"A standard laptop for a new joiner\",\n  \"category\": \"HARDWARE\",\n  \"fields\": [\n    {\"key\": \"model\", \"label\": \"Which model?\", \"required\": true},\n    {\"key\": \"notes\", \"label\": \"Anything else?\", \"required\": false}\n  ],\n  \"fulfilmentTargetHours\": 72\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. A DRAFT item cannot be requested yet (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{catalogItemId}}\",\n  \"answers\": {\"model\": \"X1\"},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. Update the DRAFT item (204)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New laptop (standard)\",\n  \"description\": \"A standard laptop for a new joiner\",\n  \"category\": \"HARDWARE\",\n  \"fields\": [\n    {\"key\": \"model\", \"label\": \"Which model?\", \"required\": true},\n    {\"key\": \"notes\", \"label\": \"Anything else?\", \"required\": false}\n  ],\n  \"fulfilmentTargetHours\": 72\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{catalogItemId}}",
+                "update"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{catalogItemId}}/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. A REQUESTER does not see a DRAFT item (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{catalogItemId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{catalogItemId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. Control: publish (DRAFT -> PUBLISHED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{catalogItemId}}",
+                "control",
+                "publish"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{catalogItemId}}/control/publish"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is PUBLISHED', () => pm.expect(pm.response.json().status).to.eql('PUBLISHED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. Retrieve (PUBLISHED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{catalogItemId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{catalogItemId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. Update a PUBLISHED item is refused (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Renamed\",\n  \"fields\": [],\n  \"fulfilmentTargetHours\": 8\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{catalogItemId}}",
+                "update"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{catalogItemId}}/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. The same code again is refused, whatever its case (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"Laptop\",\n  \"name\": \"Another laptop\",\n  \"fields\": [],\n  \"fulfilmentTargetHours\": 24\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Contains the item', () => pm.expect(pm.response.json().map(i => i.id)).to.include(pm.environment.get('catalogItemId')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. Retrieve catalog (collection, status=PUBLISHED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "PUBLISHED"
+                }
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/retrieve?status=PUBLISHED"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Published', () => pm.expect(pm.response.json().status).to.eql('PUBLISHED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. A REQUESTER sees the published item",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{catalogItemId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{catalogItemId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Only the published item', () => pm.expect(pm.response.json().map(i => i.id)).to.eql([pm.environment.get('catalogItemId')]));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. A REQUESTER lists the catalog: only PUBLISHED, even asking for DRAFT",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "DRAFT"
+                }
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/retrieve?status=DRAFT"
+            }
+          }
+        }
+      ],
+      "name": "01. Catalog (BIAN Behavior Qualifiers)"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('SUBMITTED, snapshot of the item, SLA pending', () => {",
+                  "    pm.expect(json.status).to.eql('SUBMITTED');",
+                  "    pm.expect(json.catalogItemCode).to.eql('LAPTOP');",
+                  "    pm.expect(json.requesterId).to.eql(pm.environment.get('srqStaffRequesterId'));",
+                  "    pm.expect(json.answers.model).to.eql('X1');",
+                  "    pm.expect(json.fulfilment.state).to.eql('PENDING');",
+                  "    pm.expect(json.approvalRequestId).to.be.undefined;",
+                  "});",
+                  "pm.environment.set('requestId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Initiate ServiceRequest (staff, on behalf of a requester, SUBMITTED, SLA pending)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{catalogItemId}}\",\n  \"answers\": {\"model\": \"X1\"},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Same request', () => pm.expect(pm.response.json().id).to.eql(pm.environment.get('requestId')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. Retrieve ServiceRequest By ID",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Contains the request', () => pm.expect(pm.response.json().map(r => r.id)).to.include(pm.environment.get('requestId')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. Retrieve ServiceRequests (collection, by catalog item and openOnly)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "catalogItemId",
+                  "value": "{{catalogItemId}}"
+                },
+                {
+                  "key": "openOnly",
+                  "value": "true"
+                }
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/retrieve?catalogItemId={{catalogItemId}}&openOnly=true"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. Assignment: name who fulfils it (204)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeId\": \"{{srqAssigneeId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "assignment",
+                "update"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/assignment/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. Comment: public",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Stock is on its way\",\n  \"internal\": false\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "comment",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/comment/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. Comment: internal note (staff only)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Supplier says Thursday\",\n  \"internal\": true\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "comment",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/comment/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. Control: start-fulfilment (SUBMITTED -> IN_FULFILMENT)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "control",
+                "start-fulfilment"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/control/start-fulfilment"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is IN_FULFILMENT', () => pm.expect(pm.response.json().status).to.eql('IN_FULFILMENT'));",
+                  "pm.test('Assignee set, started, two comments', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.assigneeId).to.eql(pm.environment.get('srqAssigneeId'));",
+                  "    pm.expect(json.startedAt).to.not.be.undefined;",
+                  "    pm.expect(json.comments).to.have.lengthOf(2);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. Retrieve (IN_FULFILMENT, assigned, both comments visible to staff)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. Control: fulfil (IN_FULFILMENT -> FULFILLED, with notes)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Laptop handed over to the new joiner\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "control",
+                "fulfil"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/control/fulfil"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is FULFILLED', () => pm.expect(pm.response.json().status).to.eql('FULFILLED'));",
+                  "pm.test('SLA met, notes kept', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.fulfilment.state).to.eql('MET');",
+                  "    pm.expect(json.fulfilmentNotes).to.eql('Laptop handed over to the new joiner');",
+                  "    pm.expect(json.fulfilledAt).to.not.be.undefined;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. Retrieve (FULFILLED, the SLA is met)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. Control: close (FULFILLED -> CLOSED, terminal)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "control",
+                "close"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/control/close"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Ledger reads in order', () => pm.expect(json.map(e => e.action)).to.eql(['INITIATED', 'ASSIGNED', 'COMMENT_ADDED', 'COMMENT_ADDED', 'FULFILMENT_STARTED', 'FULFILLED', 'CLOSED']));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. Retrieve Audit Ledger (every step, in order)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/audit-log/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "13. Control: retire the catalog item (PUBLISHED -> RETIRED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{catalogItemId}}",
+                "control",
+                "retire"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{catalogItemId}}/control/retire"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is RETIRED', () => pm.expect(pm.response.json().status).to.eql('RETIRED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "14. Retrieve (RETIRED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{catalogItemId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{catalogItemId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "15. A RETIRED item can no longer be requested (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{catalogItemId}}\",\n  \"answers\": {\"model\": \"X1\"},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Still closed, snapshot intact', () => { const json = pm.response.json(); pm.expect(json.status).to.eql('CLOSED'); pm.expect(json.catalogItemName).to.eql('New laptop (standard)'); pm.expect(json.catalogItemCode).to.eql('LAPTOP'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16. Retrieve the request again: the item being retired changed nothing (still CLOSED, snapshot intact)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/retrieve"
+            }
+          }
+        }
+      ],
+      "name": "02. Request Lifecycle & SLA"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('vpnItemId', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Setup: a second published item for the self-service flow",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"VPN\",\n  \"name\": \"VPN access\",\n  \"category\": \"ACCESS\",\n  \"fields\": [{\"key\": \"reason\", \"label\": \"Why do you need it?\", \"required\": true}],\n  \"fulfilmentTargetHours\": 24\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. Setup: publish it",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{vpnItemId}}",
+                "control",
+                "publish"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{vpnItemId}}/control/publish"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Filed on the caller behalf', () => {",
+                  "    pm.expect(json.requesterId).to.eql(pm.environment.get('srqUserId'));",
+                  "    pm.expect(json.status).to.eql('SUBMITTED');",
+                  "});",
+                  "pm.environment.set('myRequestId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. Initiate as REQUESTER: the requester is the caller, whatever the body says",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{vpnItemId}}\",\n  \"answers\": {\"reason\": \"Working from home on Fridays\"},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. Staff adds an internal note to it",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Check the contract before approving more seats\",\n  \"internal\": true\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "comment",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/comment/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. REQUESTER comments: an internal flag is ignored",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Needed by Monday\",\n  \"internal\": true\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "comment",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/comment/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Only the public comment', () => {",
+                  "    pm.expect(json.comments).to.have.lengthOf(1);",
+                  "    pm.expect(json.comments[0].text).to.eql('Needed by Monday');",
+                  "    pm.expect(json.comments[0].internal).to.eql(false);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. REQUESTER reads the request: the internal note is hidden, their own comment is there",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Exactly one, theirs', () => pm.expect(pm.response.json().map(r => r.id)).to.eql([pm.environment.get('myRequestId')]));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. REQUESTER lists: only their own requests",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Both', () => pm.expect(pm.response.json().map(r => r.id)).to.include.members([pm.environment.get('requestId'), pm.environment.get('myRequestId')]));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. Staff lists: sees both requests of the tenant",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. Another REQUESTER cannot read it (404, like a missing one)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqOtherUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. Another REQUESTER cannot comment on it (404)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"hello\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqOtherUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "comment",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/comment/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. REQUESTER cannot start fulfilment (403, a staff action)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "control",
+                "start-fulfilment"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/control/start-fulfilment"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. REQUESTER cannot assign (403)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeId\": \"{{srqAssigneeId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "assignment",
+                "update"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/assignment/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "13. REQUESTER cannot decide an approval (403)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"APPROVE\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "approval",
+                "capture"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/approval/capture"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "14. REQUESTER cannot read the audit trail (403)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/audit-log/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00403', () => {",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00403');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "15. REQUESTER cannot manage the catalog (403)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"SNEAKY\",\n  \"name\": \"Sneaky\",\n  \"fields\": [],\n  \"fulfilmentTargetHours\": 1\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16. Staff cancels it (terminal, no SLA owed)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "control",
+                "cancel"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/control/cancel"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Cancelled, no SLA', () => { pm.expect(json.status).to.eql('CANCELLED'); pm.expect(json.fulfilment).to.be.undefined; });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "17. Retrieve (CANCELLED has no SLA)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "18. A cancelled request refuses a comment (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"too late\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "comment",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/comment/initiate"
+            }
+          }
+        }
+      ],
+      "name": "03. Self-Service (REQUESTER)"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('negItemId', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Setup: a published item with a mandatory question",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"MOUSE\",\n  \"name\": \"Mouse\",\n  \"fields\": [{\"key\": \"colour\", \"label\": \"Which colour?\", \"required\": true}],\n  \"fulfilmentTargetHours\": 8\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. Setup: publish it",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{negItemId}}",
+                "control",
+                "publish"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{negItemId}}/control/publish"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. Initiate - Missing mandatory answer (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{negItemId}}\",\n  \"answers\": {},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. Initiate - Unknown question (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{negItemId}}\",\n  \"answers\": {\"colour\": \"black\", \"size\": \"XL\"},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. Initiate - Staff must name the requester (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{negItemId}}\",\n  \"answers\": {\"colour\": \"black\"}\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. Initiate - Missing catalogItemId (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": {},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. Initiate - Unknown catalog item (404)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"00000000-0000-0000-0000-000000000000\",\n  \"answers\": {},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. Initiate - Another tenant cannot order this tenant's item (404)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{negItemId}}\",\n  \"answers\": {\"colour\": \"black\"},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "00000000-0000-0000-0000-000000000001"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. Initiate - Missing X-Tenant-Id (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{negItemId}}\",\n  \"answers\": {\"colour\": \"black\"},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. Catalog - Blank name (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"BLANK\",\n  \"name\": \"\",\n  \"fields\": [],\n  \"fulfilmentTargetHours\": 8\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. Catalog - Bad question key (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"BADKEY\",\n  \"name\": \"Bad key\",\n  \"fields\": [{\"key\": \"1 bad key\", \"label\": \"x\", \"required\": false}],\n  \"fulfilmentTargetHours\": 8\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. Catalog - Target out of range (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"LONG\",\n  \"name\": \"Too long\",\n  \"fields\": [],\n  \"fulfilmentTargetHours\": 99999\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "13. Catalog - Two questions with the same key (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"TWICE\",\n  \"name\": \"Twice\",\n  \"fields\": [{\"key\": \"a\", \"label\": \"A\", \"required\": false}, {\"key\": \"a\", \"label\": \"Again\", \"required\": false}],\n  \"fulfilmentTargetHours\": 8\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('negRequestId', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "14. Setup: a request to run the state-machine checks on",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{negItemId}}\",\n  \"answers\": {\"colour\": \"black\"},\n  \"requesterId\": \"{{srqStaffRequesterId}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "15. Fulfil before starting is an illegal transition (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"done\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{negRequestId}}",
+                "control",
+                "fulfil"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{negRequestId}}/control/fulfil"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16. Close before fulfilling is an illegal transition (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{negRequestId}}",
+                "control",
+                "close"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{negRequestId}}/control/close"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "17. Capture an approval on a request that is not waiting for one (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"APPROVE\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{negRequestId}}",
+                "approval",
+                "capture"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{negRequestId}}/approval/capture"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "18. Fulfil needs notes (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{negRequestId}}",
+                "control",
+                "fulfil"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{negRequestId}}/control/fulfil"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "19. Retrieve - Non-existent UUID (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "00000000-0000-0000-0000-000000000000",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/00000000-0000-0000-0000-000000000000/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "20. Retrieve - Malformed UUID Path (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "not-a-uuid",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/not-a-uuid/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "21. Retrieve - Another tenant's request answers like a missing one (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "00000000-0000-0000-0000-000000000001"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{requestId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{requestId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "22. Start fulfilment - Another tenant cannot work it (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "00000000-0000-0000-0000-000000000001"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{negRequestId}}",
+                "control",
+                "start-fulfilment"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{negRequestId}}/control/start-fulfilment"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "23. Audit log - Another tenant (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "00000000-0000-0000-0000-000000000001"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{negRequestId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{negRequestId}}/audit-log/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "24. Catalog retrieve - Another tenant (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "00000000-0000-0000-0000-000000000001"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{negItemId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{negItemId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "25. Catalog retire (204)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{negItemId}}",
+                "control",
+                "retire"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{negItemId}}/control/retire"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "26. Retire again (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "catalog",
+                "{{negItemId}}",
+                "control",
+                "retire"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/catalog/{{negItemId}}/control/retire"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Not allowed', () => pm.expect([404, 405]).to.include(pm.response.code));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "27. Delete - There is no DELETE (404 or 405)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "DELETE",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{negRequestId}}"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{negRequestId}}"
+            }
+          }
+        }
+      ],
+      "name": "04. Negative Tests & Guarantees"
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8099"
+    }
+  ]
+}
