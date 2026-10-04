@@ -9,6 +9,7 @@ import com.thinklab.domain.exception.ServiceRequestNotFoundException;
 import com.thinklab.domain.model.ServiceRequest;
 import com.thinklab.domain.model.ServiceRequest.ServiceRequestStatus;
 import com.thinklab.domain.port.ApprovalServicePort;
+import com.thinklab.domain.port.ApprovalServicePort.DecisionOutcome;
 import com.thinklab.domain.port.ApprovalServicePort.ApprovalOutcome;
 import com.thinklab.domain.repository.ServiceRequestRepository;
 import jakarta.inject.Singleton;
@@ -44,6 +45,9 @@ public class CaptureApprovalDecisionUseCase {
         if (RequestWorkflow.REQUESTER_ROLE.equals(role)) {
             return Mono.error(new ServiceRequestAccessDeniedException("decide an approval"));
         }
+        if (request.outcome() == DecisionOutcome.RETURN && (request.comment() == null || request.comment().isBlank())) {
+            return Mono.error(new IllegalArgumentException("A comment saying what to fix is mandatory to return a request."));
+        }
         return requestRepository.findById(id, organisationId)
                 .switchIfEmpty(Mono.error(new ServiceRequestNotFoundException(id)))
                 .flatMap(serviceRequest -> {
@@ -52,16 +56,19 @@ public class CaptureApprovalDecisionUseCase {
                                 "Illegal transition: no approval is waiting for a decision on this ServiceRequest (it is " + serviceRequest.getStatus() + ")."));
                     }
                     return approvalServicePort.captureDecision(serviceRequest.getApprovalRequestId(), UUID.fromString(executor), request.outcome(), request.comment(), executor)
-                            .flatMap(outcome -> applyOutcome(serviceRequest, outcome, executor));
+                            .flatMap(outcome -> applyOutcome(serviceRequest, outcome, request.comment(), executor));
                 });
     }
 
-    private Mono<ServiceRequestResponse> applyOutcome(ServiceRequest serviceRequest, ApprovalOutcome outcome, String executor) {
+    private Mono<ServiceRequestResponse> applyOutcome(ServiceRequest serviceRequest, ApprovalOutcome outcome, String comment, String executor) {
         if (outcome == ApprovalOutcome.APPROVED) {
             return save(serviceRequest, serviceRequest.approve(executor));
         }
         if (outcome == ApprovalOutcome.REJECTED) {
             return save(serviceRequest, serviceRequest.reject(executor));
+        }
+        if (outcome == ApprovalOutcome.RETURNED) {
+            return save(serviceRequest, serviceRequest.returnForChanges(comment, executor));
         }
         return Mono.just(ServiceRequestMapper.toResponse(serviceRequest, true, Instant.now()));
     }

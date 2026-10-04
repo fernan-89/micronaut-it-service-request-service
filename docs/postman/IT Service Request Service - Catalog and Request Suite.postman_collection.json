@@ -2214,13 +2214,18 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SRQ-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SRQ-00404');",
+                  "});"
                 ],
                 "type": "text/javascript"
               }
             }
           ],
-          "name": "16. Staff cancels it (terminal, no SLA owed)",
+          "name": "16. Another REQUESTER cannot cancel it (404)",
           "request": {
             "header": [
               {
@@ -2229,7 +2234,55 @@
               },
               {
                 "key": "X-Executor",
-                "value": "{{executor}}"
+                "value": "{{srqOtherUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "it-service-request",
+                "v1",
+                "{{myRequestId}}",
+                "control",
+                "cancel"
+              ],
+              "raw": "{{base_url}}/it-service-request/v1/{{myRequestId}}/control/cancel"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16b. The REQUESTER cancels their own request (terminal, no SLA owed)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{srqOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{srqUserId}}"
+              },
+              {
+                "key": "X-Role",
+                "value": "REQUESTER"
               }
             ],
             "method": "PUT",

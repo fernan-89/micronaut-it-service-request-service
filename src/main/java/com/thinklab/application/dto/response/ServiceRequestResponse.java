@@ -28,6 +28,7 @@ public record ServiceRequestResponse(
         Instant startedAt,
         Instant fulfilledAt,
         String fulfilmentNotes,
+        String returnReason,
         List<CommentResponse> comments,
         Instant createdAt,
         Instant updatedAt

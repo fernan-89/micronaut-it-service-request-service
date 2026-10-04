@@ -6,6 +6,7 @@ import com.thinklab.application.dto.request.FulfilServiceRequestRequest;
 import com.thinklab.application.dto.request.InitiateCatalogItemRequest;
 import com.thinklab.application.dto.request.InitiateCommentRequest;
 import com.thinklab.application.dto.request.InitiateServiceRequestRequest;
+import com.thinklab.application.dto.request.ResubmitServiceRequestRequest;
 import com.thinklab.application.dto.request.UpdateCatalogItemRequest;
 import com.thinklab.application.dto.response.AuditEntryResponse;
 import com.thinklab.application.dto.response.CatalogItemResponse;
@@ -19,6 +20,7 @@ import com.thinklab.application.usecase.FulfilServiceRequestUseCase;
 import com.thinklab.application.usecase.InitiateCatalogItemUseCase;
 import com.thinklab.application.usecase.InitiateCommentUseCase;
 import com.thinklab.application.usecase.InitiateServiceRequestUseCase;
+import com.thinklab.application.usecase.ResubmitServiceRequestUseCase;
 import com.thinklab.application.usecase.RetrieveCatalogAuditLogUseCase;
 import com.thinklab.application.usecase.RetrieveCatalogItemUseCase;
 import com.thinklab.application.usecase.RetrieveCatalogItemsUseCase;
@@ -82,6 +84,7 @@ public class ServiceRequestController {
     private final ControlServiceRequestUseCase controlServiceRequestUseCase;
     private final FulfilServiceRequestUseCase fulfilServiceRequestUseCase;
     private final CancelServiceRequestUseCase cancelServiceRequestUseCase;
+    private final ResubmitServiceRequestUseCase resubmitServiceRequestUseCase;
     private final InitiateCommentUseCase initiateCommentUseCase;
     private final RetrieveServiceRequestAuditLogUseCase retrieveServiceRequestAuditLogUseCase;
 
@@ -100,6 +103,7 @@ public class ServiceRequestController {
             ControlServiceRequestUseCase controlServiceRequestUseCase,
             FulfilServiceRequestUseCase fulfilServiceRequestUseCase,
             CancelServiceRequestUseCase cancelServiceRequestUseCase,
+            ResubmitServiceRequestUseCase resubmitServiceRequestUseCase,
             InitiateCommentUseCase initiateCommentUseCase,
             RetrieveServiceRequestAuditLogUseCase retrieveServiceRequestAuditLogUseCase
     ) {
@@ -117,6 +121,7 @@ public class ServiceRequestController {
         this.controlServiceRequestUseCase = controlServiceRequestUseCase;
         this.fulfilServiceRequestUseCase = fulfilServiceRequestUseCase;
         this.cancelServiceRequestUseCase = cancelServiceRequestUseCase;
+        this.resubmitServiceRequestUseCase = resubmitServiceRequestUseCase;
         this.initiateCommentUseCase = initiateCommentUseCase;
         this.retrieveServiceRequestAuditLogUseCase = retrieveServiceRequestAuditLogUseCase;
     }
@@ -264,13 +269,24 @@ public class ServiceRequestController {
         return control(id, tenantId, ControlServiceRequestUseCase.Action.CLOSE, executor, role);
     }
 
-    /** Behavior Qualifier: {@code control/cancel}. Terminal, replaces DELETE, until the request is fulfilled (staff only, ADR-031). */
+    /** Behavior Qualifier: {@code control/cancel}. Terminal, replaces DELETE, until the request is fulfilled; a requester may cancel their own (ADR-031). */
     @Put("/{id}/control/cancel")
     public Mono<HttpResponse<Void>> controlCancel(@PathVariable UUID id, @Header(TENANT_HEADER) @NotBlank String tenantId,
                                                   @Header(EXECUTOR_HEADER) @NotBlank String executor, @Header(ROLE_HEADER) @Nullable String role) {
         log.info("[ACTION: CANCEL_SERVICE_REQUEST] [EXECUTOR: {}] for ID: {}", executor, id);
 
         return Mono.defer(() -> cancelServiceRequestUseCase.execute(id, UUID.fromString(tenantId), executor, role)).thenReturn(HttpResponse.noContent());
+    }
+
+    /** Behavior Qualifier: {@code control/resubmit}. RETURNED -&gt; PENDING_APPROVAL: the requester edits the answers and starts a new approval (ADR-035). */
+    @Put("/{id}/control/resubmit")
+    public Mono<HttpResponse<ServiceRequestResponse>> controlResubmit(
+            @PathVariable UUID id, @Header(TENANT_HEADER) @NotBlank String tenantId, @Header(EXECUTOR_HEADER) @NotBlank String executor,
+            @Header(ROLE_HEADER) @Nullable String role, @Body @Valid ResubmitServiceRequestRequest request
+    ) {
+        log.info("[ACTION: RESUBMIT_SERVICE_REQUEST] [EXECUTOR: {}] for ID: {}", executor, id);
+
+        return Mono.defer(() -> resubmitServiceRequestUseCase.execute(id, UUID.fromString(tenantId), request, executor, role)).map(HttpResponse::ok);
     }
 
     /** Behavior Qualifier: {@code comment/initiate}. Public, or internal for staff. */

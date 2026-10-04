@@ -6,6 +6,7 @@ import com.thinklab.application.dto.request.FulfilServiceRequestRequest;
 import com.thinklab.application.dto.request.InitiateCatalogItemRequest;
 import com.thinklab.application.dto.request.InitiateCommentRequest;
 import com.thinklab.application.dto.request.InitiateServiceRequestRequest;
+import com.thinklab.application.dto.request.ResubmitServiceRequestRequest;
 import com.thinklab.application.dto.request.UpdateCatalogItemRequest;
 import com.thinklab.application.dto.response.AuditEntryResponse;
 import com.thinklab.application.dto.response.CatalogItemResponse;
@@ -19,6 +20,7 @@ import com.thinklab.application.usecase.FulfilServiceRequestUseCase;
 import com.thinklab.application.usecase.InitiateCatalogItemUseCase;
 import com.thinklab.application.usecase.InitiateCommentUseCase;
 import com.thinklab.application.usecase.InitiateServiceRequestUseCase;
+import com.thinklab.application.usecase.ResubmitServiceRequestUseCase;
 import com.thinklab.application.usecase.RetrieveCatalogAuditLogUseCase;
 import com.thinklab.application.usecase.RetrieveCatalogItemUseCase;
 import com.thinklab.application.usecase.RetrieveCatalogItemsUseCase;
@@ -74,6 +76,7 @@ class ServiceRequestControllerTest {
     @Mock private ControlServiceRequestUseCase controlServiceRequestUseCase;
     @Mock private FulfilServiceRequestUseCase fulfilServiceRequestUseCase;
     @Mock private CancelServiceRequestUseCase cancelServiceRequestUseCase;
+    @Mock private ResubmitServiceRequestUseCase resubmitServiceRequestUseCase;
     @Mock private InitiateCommentUseCase initiateCommentUseCase;
     @Mock private RetrieveServiceRequestAuditLogUseCase retrieveServiceRequestAuditLogUseCase;
 
@@ -84,7 +87,7 @@ class ServiceRequestControllerTest {
         controller = new ServiceRequestController(initiateCatalogItemUseCase, retrieveCatalogItemUseCase, retrieveCatalogItemsUseCase,
                 updateCatalogItemUseCase, controlCatalogItemUseCase, retrieveCatalogAuditLogUseCase, initiateServiceRequestUseCase,
                 retrieveServiceRequestUseCase, retrieveServiceRequestsUseCase, assignServiceRequestUseCase, captureApprovalDecisionUseCase,
-                controlServiceRequestUseCase, fulfilServiceRequestUseCase, cancelServiceRequestUseCase, initiateCommentUseCase,
+                controlServiceRequestUseCase, fulfilServiceRequestUseCase, cancelServiceRequestUseCase, resubmitServiceRequestUseCase, initiateCommentUseCase,
                 retrieveServiceRequestAuditLogUseCase);
     }
 
@@ -94,7 +97,7 @@ class ServiceRequestControllerTest {
 
     private ServiceRequestResponse sampleRequest() {
         return new ServiceRequestResponse(id, tenant, UUID.randomUUID(), UUID.randomUUID(), "LAPTOP", "New laptop", Map.of(), "SUBMITTED", null, null,
-                null, null, null, null, List.of(), Instant.now(), Instant.now());
+                null, null, null, null, null, List.of(), Instant.now(), Instant.now());
     }
 
     // --- catalog ---
@@ -191,6 +194,15 @@ class ServiceRequestControllerTest {
         when(captureApprovalDecisionUseCase.execute(id, tenant, body, EXECUTOR, null)).thenReturn(Mono.just(sampleRequest()));
 
         StepVerifier.create(controller.captureApproval(id, tenantHeader, EXECUTOR, null, body)).assertNext(response -> assertEquals(HttpStatus.OK, response.getStatus())).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("resubmit answers 200 with the request as it is after the new approval started")
+    void resubmit() {
+        var body = new ResubmitServiceRequestRequest(Map.of("model", "X2"));
+        when(resubmitServiceRequestUseCase.execute(id, tenant, body, EXECUTOR, "REQUESTER")).thenReturn(Mono.just(sampleRequest()));
+
+        StepVerifier.create(controller.controlResubmit(id, tenantHeader, EXECUTOR, "REQUESTER", body)).assertNext(response -> assertEquals(HttpStatus.OK, response.getStatus())).verifyComplete();
     }
 
     @Test

@@ -119,6 +119,9 @@ public class ServiceRequestMongoRepositoryAdapter implements ServiceRequestRepos
                 Updates.set("startedAt", request.getStartedAt()),
                 Updates.set("fulfilledAt", request.getFulfilledAt()),
                 Updates.set("fulfilmentNotes", request.getFulfilmentNotes()),
+                Updates.set("returnReason", request.getReturnReason()),
+                Updates.set("answers", new java.util.LinkedHashMap<>(request.getAnswers())),
+                Updates.set("approvalRequestId", request.getApprovalRequestId()),
                 Updates.set(FIELD_UPDATED_AT, Instant.now()),
                 Updates.push(FIELD_AUDIT_TRAIL, AuditEntryDocument.fromDomain(auditEntry))
         );

@@ -20,8 +20,8 @@ public interface ApprovalServicePort {
     /** Withdraws a pending approval request, so it leaves the approvers' inboxes. */
     Mono<Void> cancelApprovalRequest(UUID approvalRequestId, String executor);
 
-    enum DecisionOutcome { APPROVE, REJECT }
+    enum DecisionOutcome { APPROVE, REJECT, RETURN }
 
     /** Mirrors workflow-approval-service's own status, kept as this service's own copy. */
-    enum ApprovalOutcome { PENDING, APPROVED, REJECTED, CANCELLED }
+    enum ApprovalOutcome { PENDING, APPROVED, REJECTED, RETURNED, CANCELLED }
 }

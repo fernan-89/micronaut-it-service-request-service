@@ -33,7 +33,7 @@ public final class ServiceRequestMapper {
         return new ServiceRequestResponse(request.getId(), request.getOrganisationId(), request.getRequesterId(), request.getCatalogItemId(),
                 request.getCatalogItemCode(), request.getCatalogItemName(), request.getAnswers(), request.getStatus().name(), request.getAssigneeId(),
                 request.getApprovalRequestId(), noSla ? null : sla(request.getFulfilmentDueAt(), request.getFulfilledAt(), now),
-                request.getStartedAt(), request.getFulfilledAt(), request.getFulfilmentNotes(), comments, request.getCreatedAt(), request.getUpdatedAt());
+                request.getStartedAt(), request.getFulfilledAt(), request.getFulfilmentNotes(), request.getReturnReason(), comments, request.getCreatedAt(), request.getUpdatedAt());
     }
 
     /** MET or BREACHED once the target was reached (late or not); otherwise PENDING until the due date passes, then BREACHED. */

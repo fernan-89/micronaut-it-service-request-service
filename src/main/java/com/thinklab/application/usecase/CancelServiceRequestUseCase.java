@@ -1,6 +1,5 @@
 package com.thinklab.application.usecase;
 
-import com.thinklab.domain.exception.ServiceRequestAccessDeniedException;
 import com.thinklab.domain.exception.ServiceRequestNotFoundException;
 import com.thinklab.domain.model.ServiceRequest.ServiceRequestStatus;
 import com.thinklab.domain.port.ApprovalServicePort;
@@ -33,10 +32,9 @@ public class CancelServiceRequestUseCase {
     public Mono<Void> execute(UUID id, UUID organisationId, String executor, String role) {
         log.info("[USE CASE] Cancelling ServiceRequest ID: {}", id);
 
-        if (RequestWorkflow.REQUESTER_ROLE.equals(role)) {
-            return Mono.error(new ServiceRequestAccessDeniedException("cancel a request"));
-        }
+        boolean requester = RequestWorkflow.REQUESTER_ROLE.equals(role);
         return requestRepository.findById(id, organisationId)
+                .filter(request -> !requester || request.getRequesterId().equals(UUID.fromString(executor)))
                 .switchIfEmpty(Mono.error(new ServiceRequestNotFoundException(id)))
                 .flatMap(request -> {
                     ServiceRequestStatus before = request.getStatus();

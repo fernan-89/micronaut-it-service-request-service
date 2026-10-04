@@ -213,17 +213,84 @@ class ServiceRequestTest {
     }
 
     @Test
+    @DisplayName("an approver can return a request waiting for approval: RETURNED with the reason kept, only from PENDING_APPROVAL, and the reason is mandatory")
+    void returnForChanges() {
+        ServiceRequest request = pending();
+        assertThrows(IllegalArgumentException.class, () -> request.returnForChanges(null, "approver"));
+        assertThrows(IllegalArgumentException.class, () -> request.returnForChanges(" ", "approver"));
+        assertEquals(ServiceRequestStatus.PENDING_APPROVAL, request.getStatus());
+
+        var entry = request.returnForChanges("Say which model", "approver");
+
+        assertEquals(ServiceRequestStatus.RETURNED, request.getStatus());
+        assertEquals("Say which model", request.getReturnReason());
+        assertEquals("RETURNED", entry.action());
+        assertThrows(InvalidServiceRequestStatusException.class, () -> request.returnForChanges("again", "approver"));
+        assertThrows(InvalidServiceRequestStatusException.class, () -> request().returnForChanges("no approval here", "approver"));
+        assertThrows(InvalidServiceRequestStatusException.class, () -> request.startFulfilment("op-1"));
+    }
+
+    @Test
+    @DisplayName("resubmitting edits the answers and starts a new approval, keeping the due date; it is checked like creation and only from RETURNED")
+    void resubmit() {
+        UUID policy = UUID.randomUUID();
+        CatalogItem item = item(policy, true);
+        ServiceRequest request = ServiceRequest.createNew(UUID.randomUUID(), org, requester, item, Map.of("model", "X1"), UUID.randomUUID(), "req-1");
+        assertThrows(InvalidServiceRequestStatusException.class, () -> request.resubmit(item, Map.of("model", "X2"), UUID.randomUUID(), "req-1"));
+        request.returnForChanges("Say which model", "approver");
+        var due = request.getFulfilmentDueAt();
+        UUID newApproval = UUID.randomUUID();
+
+        assertThrows(NullPointerException.class, () -> request.resubmit(null, Map.of("model", "X2"), newApproval, "req-1"));
+        assertThrows(InvalidCatalogItemStatusException.class, () -> request.resubmit(item(policy, false), Map.of("model", "X2"), newApproval, "req-1"));
+        assertThrows(IllegalArgumentException.class, () -> request.resubmit(item(policy, true), Map.of("model", "X2"), newApproval, "req-1"));
+        assertThrows(IllegalArgumentException.class, () -> request.resubmit(item, Map.of("model", "X2"), null, "req-1"));
+        assertThrows(IllegalArgumentException.class, () -> request.resubmit(item, Map.of("colour", "red"), newApproval, "req-1"));
+        assertThrows(IllegalArgumentException.class, () -> request.resubmit(item, null, newApproval, "req-1"));
+        assertEquals(ServiceRequestStatus.RETURNED, request.getStatus());
+
+        var entry = request.resubmit(item, Map.of("model", "X2"), newApproval, "req-1");
+
+        assertEquals(ServiceRequestStatus.PENDING_APPROVAL, request.getStatus());
+        assertEquals(ServiceRequestStatus.RETURNED, entry.fromStatus());
+        assertEquals(Map.of("model", "X2"), request.getAnswers());
+        assertEquals(newApproval, request.getApprovalRequestId());
+        assertNull(request.getReturnReason());
+        assertEquals(due, request.getFulfilmentDueAt());
+        assertTrue(entry.detail().contains("waiting for approval again"));
+    }
+
+    @Test
+    @DisplayName("an item that needs no approval goes straight back to SUBMITTED when resubmitted, and a returned request can be cancelled or commented on")
+    void resubmitWithoutApprovalAndCancelReturned() {
+        CatalogItem plain = item(null, true);
+        ServiceRequest request = ServiceRequest.reconstitute(UUID.randomUUID(), org, requester, plain.getId(), "LAPTOP", "New laptop", Map.of("model", "X1"),
+                ServiceRequestStatus.RETURNED, null, null, Instant.now().plus(Duration.ofHours(8)), null, null, null, "fix it", List.of(), null, null, List.of());
+
+        request.addComment(new Comment(UUID.randomUUID(), "op", "hi", false, null), "op");
+        assertThrows(IllegalArgumentException.class, () -> request.resubmit(item(null, true), Map.of("model", "X1"), null, "req-1"));
+        var entry = request.resubmit(plain, Map.of("model", "X1"), null, "req-1");
+        assertEquals(ServiceRequestStatus.SUBMITTED, request.getStatus());
+        assertTrue(entry.detail().endsWith("resubmitted."));
+
+        ServiceRequest returned = pending();
+        returned.returnForChanges("fix it", "approver");
+        returned.cancel("req-1");
+        assertEquals(ServiceRequestStatus.CANCELLED, returned.getStatus());
+    }
+
+    @Test
     @DisplayName("reconstitute needs the identity and defaults the optional state")
     void reconstitute() {
         UUID id = UUID.randomUUID();
         UUID item = UUID.randomUUID();
-        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(null, org, requester, item, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null));
-        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(id, null, requester, item, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null));
-        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(id, org, null, item, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null));
-        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(id, org, requester, null, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null));
-        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(id, org, requester, item, null, "n", null, null, null, null, null, null, null, null, null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(null, org, requester, item, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(id, null, requester, item, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(id, org, null, item, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(id, org, requester, null, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> ServiceRequest.reconstitute(id, org, requester, item, null, "n", null, null, null, null, null, null, null, null, null, null, null, null, null));
 
-        ServiceRequest bare = ServiceRequest.reconstitute(id, org, requester, item, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null);
+        ServiceRequest bare = ServiceRequest.reconstitute(id, org, requester, item, "C", "n", null, null, null, null, null, null, null, null, null, null, null, null, null);
         assertEquals(ServiceRequestStatus.SUBMITTED, bare.getStatus());
         assertTrue(bare.getAnswers().isEmpty());
         assertTrue(bare.getComments().isEmpty());
@@ -233,9 +300,10 @@ class ServiceRequestTest {
         ServiceRequest source = request();
         source.assign(UUID.randomUUID(), "op-1");
         ServiceRequest full = ServiceRequest.reconstitute(source.getId(), org, requester, source.getCatalogItemId(), "LAPTOP", "New laptop", source.getAnswers(),
-                ServiceRequestStatus.IN_FULFILMENT, source.getAssigneeId(), null, source.getFulfilmentDueAt(), Instant.now(), null, null, source.getComments(),
+                ServiceRequestStatus.IN_FULFILMENT, source.getAssigneeId(), null, source.getFulfilmentDueAt(), Instant.now(), null, null, "Say which model", source.getComments(),
                 source.getCreatedAt(), source.getUpdatedAt(), source.getAuditTrail());
         assertEquals(ServiceRequestStatus.IN_FULFILMENT, full.getStatus());
+        assertEquals("Say which model", full.getReturnReason());
         assertEquals(source.getUpdatedAt(), full.getUpdatedAt());
         assertEquals(2, full.getAuditTrail().size());
     }

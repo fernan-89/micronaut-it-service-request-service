@@ -11,8 +11,8 @@ The same API serves both, narrowed by the `REQUESTER` role:
 - A REQUESTER sees only **PUBLISHED** catalog items (a draft or retired item answers 404), and the catalog list is forced to PUBLISHED whatever they ask for.
 - A REQUESTER orders for themselves: the requester is the `X-Executor` (a user id), whatever `requesterId` says. Staff must give `requesterId` to order on someone's behalf.
 - A REQUESTER sees only their own requests (another person's request answers **404**, not 403, so existence is not leaked), the list is narrowed to them, and **internal comments are never returned** to them. A comment they write is always public, even if they ask for internal.
-- A REQUESTER cannot do any staff action (assign, start fulfilment, fulfil, close, decide an approval, read an audit trail, manage the catalog, cancel): 403 `ERR-SRQ-00403`.
+- A REQUESTER can **cancel their own** request until it is fulfilled (ADR-035; another's is a 404), and edit and resubmit one an approver returned. They cannot do any other staff action (assign, start fulfilment, fulfil, close, decide an approval, read an audit trail, manage the catalog): 403 `ERR-SRQ-00403`.
 
 ## Consequences
 - Positive: one API, one set of rules; the portal and the staff console share every use case; no existence leak across requesters.
-- Negative: the scoping relies on the `X-Role` and `X-Executor` headers being the verified ones, which is true only with platform security on (as for every service). A requester cannot cancel their own request through this API yet; that is a deliberate first-slice limit, a self-service cancel would be a small addition.
+- Negative: the scoping relies on the `X-Role` and `X-Executor` headers being the verified ones, which is true only with platform security on (as for every service). A requester cancelling a request IT already started abandons work in progress (ADR-035).

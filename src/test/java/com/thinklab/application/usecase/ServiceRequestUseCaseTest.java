@@ -5,6 +5,7 @@ import com.thinklab.application.dto.request.CaptureApprovalDecisionRequest;
 import com.thinklab.application.dto.request.FulfilServiceRequestRequest;
 import com.thinklab.application.dto.request.InitiateCommentRequest;
 import com.thinklab.application.dto.request.InitiateServiceRequestRequest;
+import com.thinklab.application.dto.request.ResubmitServiceRequestRequest;
 import com.thinklab.domain.exception.CatalogItemNotFoundException;
 import com.thinklab.domain.exception.InvalidCatalogItemStatusException;
 import com.thinklab.domain.exception.InvalidServiceRequestStatusException;
@@ -290,13 +291,122 @@ class ServiceRequestUseCaseTest {
     }
 
     @Test
-    @DisplayName("cancel refuses a REQUESTER and an unknown request")
-    void cancelRefusals() {
+    @DisplayName("a REQUESTER cancels their own request, also while it waits for approval (withdrawing it); another requester's or an unknown one is a 404")
+    void cancelByRequester() {
+        ServiceRequest own = found(pending());
+        ServiceRequest others = found(submitted());
         UUID unknownId = missing();
+        when(requestRepository.save(any(), any(), any())).thenReturn(Mono.empty());
+        when(approvalService.cancelApprovalRequest(any(), any())).thenReturn(Mono.empty());
         CancelServiceRequestUseCase useCase = new CancelServiceRequestUseCase(requestRepository, approvalService);
 
-        StepVerifier.create(useCase.execute(UUID.randomUUID(), org, owner.toString(), REQUESTER)).expectError(ServiceRequestAccessDeniedException.class).verify();
+        StepVerifier.create(useCase.execute(own.getId(), org, owner.toString(), REQUESTER)).verifyComplete();
+        assertEquals(ServiceRequestStatus.CANCELLED, own.getStatus());
+        verify(approvalService).cancelApprovalRequest(own.getApprovalRequestId(), owner.toString());
+        StepVerifier.create(useCase.execute(others.getId(), org, UUID.randomUUID().toString(), REQUESTER)).expectError(ServiceRequestNotFoundException.class).verify();
+        assertEquals(ServiceRequestStatus.SUBMITTED, others.getStatus());
         StepVerifier.create(useCase.execute(unknownId, org, "op-1", null)).expectError(ServiceRequestNotFoundException.class).verify();
+    }
+
+    @Test
+    @DisplayName("a RETURN outcome sends the request back with the approver's comment; a RETURN without a comment is refused before the approval service is asked")
+    void captureReturn() {
+        when(requestRepository.save(any(), any(), any())).thenReturn(Mono.empty());
+        ServiceRequest waiting = found(pending());
+        when(approvalService.captureDecision(any(), any(), eq(DecisionOutcome.RETURN), eq("Say which model"), any())).thenReturn(Mono.just(ApprovalOutcome.RETURNED));
+        CaptureApprovalDecisionUseCase useCase = new CaptureApprovalDecisionUseCase(requestRepository, approvalService);
+        String approver = UUID.randomUUID().toString();
+
+        StepVerifier.create(useCase.execute(waiting.getId(), org, new CaptureApprovalDecisionRequest(DecisionOutcome.RETURN, "Say which model"), approver, null))
+                .assertNext(response -> {
+                    assertEquals("RETURNED", response.status());
+                    assertEquals("Say which model", response.returnReason());
+                }).verifyComplete();
+        assertEquals(ServiceRequestStatus.RETURNED, waiting.getStatus());
+        verify(requestRepository).save(any(), eq(ServiceRequestStatus.PENDING_APPROVAL), any());
+
+        for (String blank : new String[] {null, " "}) {
+            StepVerifier.create(useCase.execute(waiting.getId(), org, new CaptureApprovalDecisionRequest(DecisionOutcome.RETURN, blank), approver, null))
+                    .expectError(IllegalArgumentException.class).verify();
+        }
+        verify(approvalService, times(1)).captureDecision(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a REQUESTER edits and resubmits their returned request: new answers replace the old, a new approval is filed first, the save is guarded on RETURNED")
+    void resubmit() {
+        UUID policy = UUID.randomUUID();
+        CatalogItem item = item(policy, true);
+        ServiceRequest returned = ServiceRequest.createNew(UUID.randomUUID(), org, owner, item, Map.of("model", "X1"), UUID.randomUUID(), "req");
+        returned.returnForChanges("Say which model", "approver");
+        UUID newApproval = UUID.randomUUID();
+        when(requestRepository.findById(returned.getId(), org)).thenReturn(Mono.just(returned));
+        when(catalogRepository.findById(item.getId(), org)).thenReturn(Mono.just(item));
+        when(approvalService.initiateApprovalRequest(org, returned.getId(), owner, policy, owner.toString())).thenReturn(Mono.just(newApproval));
+        when(requestRepository.save(any(), any(), any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(new ResubmitServiceRequestUseCase(requestRepository, catalogRepository, approvalService)
+                        .execute(returned.getId(), org, new ResubmitServiceRequestRequest(Map.of("model", "X2")), owner.toString(), REQUESTER))
+                .assertNext(response -> {
+                    assertEquals("PENDING_APPROVAL", response.status());
+                    assertEquals(Map.of("model", "X2"), response.answers());
+                    assertEquals(newApproval, response.approvalRequestId());
+                })
+                .verifyComplete();
+        verify(requestRepository).save(eq(returned), eq(ServiceRequestStatus.RETURNED), any());
+    }
+
+    @Test
+    @DisplayName("staff resubmit for an item without a policy: no approval is filed and the request is SUBMITTED again")
+    void resubmitWithoutPolicy() {
+        CatalogItem item = item(null, true);
+        ServiceRequest returned = ServiceRequest.reconstitute(UUID.randomUUID(), org, owner, item.getId(), "LAPTOP", "New laptop", Map.of("model", "X1"),
+                ServiceRequestStatus.RETURNED, null, null, java.time.Instant.now(), null, null, null, "fix", List.of(), null, null, List.of());
+        when(requestRepository.findById(returned.getId(), org)).thenReturn(Mono.just(returned));
+        when(catalogRepository.findById(item.getId(), org)).thenReturn(Mono.just(item));
+        when(requestRepository.save(any(), any(), any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(new ResubmitServiceRequestUseCase(requestRepository, catalogRepository, approvalService)
+                        .execute(returned.getId(), org, new ResubmitServiceRequestRequest(Map.of("model", "X1")), "op-1", null))
+                .assertNext(response -> assertEquals("SUBMITTED", response.status())).verifyComplete();
+        verifyNoInteractions(approvalService);
+    }
+
+    @Test
+    @DisplayName("resubmit refuses: another requester (404), an unknown request, a missing item, a request not returned, an unpublished item, bad answers - none files an approval")
+    void resubmitRefusals() {
+        UUID policy = UUID.randomUUID();
+        CatalogItem item = item(policy, true);
+        ServiceRequest returned = ServiceRequest.createNew(UUID.randomUUID(), org, owner, item, Map.of("model", "X1"), UUID.randomUUID(), "req");
+        returned.returnForChanges("fix", "approver");
+        ServiceRequest waiting = pending();
+        UUID unknownId = missing();
+        when(requestRepository.findById(returned.getId(), org)).thenReturn(Mono.just(returned));
+        when(requestRepository.findById(waiting.getId(), org)).thenReturn(Mono.just(waiting));
+        when(catalogRepository.findById(item.getId(), org)).thenReturn(Mono.just(item));
+        when(catalogRepository.findById(waiting.getCatalogItemId(), org)).thenReturn(Mono.empty());
+        ResubmitServiceRequestUseCase useCase = new ResubmitServiceRequestUseCase(requestRepository, catalogRepository, approvalService);
+        var answers = new ResubmitServiceRequestRequest(Map.of("model", "X2"));
+
+        StepVerifier.create(useCase.execute(returned.getId(), org, answers, UUID.randomUUID().toString(), REQUESTER)).expectError(ServiceRequestNotFoundException.class).verify();
+        StepVerifier.create(useCase.execute(unknownId, org, answers, "op-1", null)).expectError(ServiceRequestNotFoundException.class).verify();
+        StepVerifier.create(useCase.execute(waiting.getId(), org, answers, "op-1", null)).expectError(CatalogItemNotFoundException.class).verify();
+        StepVerifier.create(useCase.execute(returned.getId(), org, new ResubmitServiceRequestRequest(Map.of("colour", "red")), "op-1", null)).expectError(IllegalArgumentException.class).verify();
+
+        CatalogItem retired = item(policy, true);
+        retired.retire("op-1");
+        ServiceRequest other = ServiceRequest.createNew(UUID.randomUUID(), org, owner, item(policy, true), Map.of("model", "X1"), UUID.randomUUID(), "req");
+        other.returnForChanges("fix", "approver");
+        when(requestRepository.findById(other.getId(), org)).thenReturn(Mono.just(other));
+        when(catalogRepository.findById(other.getCatalogItemId(), org)).thenReturn(Mono.just(retired));
+        StepVerifier.create(useCase.execute(other.getId(), org, answers, "op-1", null)).expectError(InvalidCatalogItemStatusException.class).verify();
+
+        ServiceRequest notReturned = pending();
+        when(requestRepository.findById(notReturned.getId(), org)).thenReturn(Mono.just(notReturned));
+        when(catalogRepository.findById(notReturned.getCatalogItemId(), org)).thenReturn(Mono.just(item));
+        StepVerifier.create(useCase.execute(notReturned.getId(), org, answers, "op-1", null)).expectError(InvalidServiceRequestStatusException.class).verify();
+        verifyNoInteractions(approvalService);
+        verify(requestRepository, never()).save(any(), any(), any());
     }
 
     // --- approval capture ---

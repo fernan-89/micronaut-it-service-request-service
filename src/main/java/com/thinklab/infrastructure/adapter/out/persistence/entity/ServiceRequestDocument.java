@@ -35,6 +35,7 @@ public class ServiceRequestDocument {
     private Instant startedAt;
     private Instant fulfilledAt;
     private String fulfilmentNotes;
+    private String returnReason;
     private List<CommentDocument> comments = new ArrayList<>();
     private Instant createdAt;
     private Instant updatedAt;
@@ -68,6 +69,8 @@ public class ServiceRequestDocument {
     public void setFulfilledAt(Instant fulfilledAt) { this.fulfilledAt = fulfilledAt; }
     public String getFulfilmentNotes() { return fulfilmentNotes; }
     public void setFulfilmentNotes(String fulfilmentNotes) { this.fulfilmentNotes = fulfilmentNotes; }
+    public String getReturnReason() { return returnReason; }
+    public void setReturnReason(String returnReason) { this.returnReason = returnReason; }
     public List<CommentDocument> getComments() { return comments; }
     public void setComments(List<CommentDocument> comments) { this.comments = comments; }
     public Instant getCreatedAt() { return createdAt; }
@@ -121,6 +124,7 @@ public class ServiceRequestDocument {
             doc.setStartedAt(request.getStartedAt());
             doc.setFulfilledAt(request.getFulfilledAt());
             doc.setFulfilmentNotes(request.getFulfilmentNotes());
+            doc.setReturnReason(request.getReturnReason());
             doc.setComments(request.getComments().stream().map(CommentDocument::fromDomain).collect(Collectors.toCollection(ArrayList::new)));
             doc.setCreatedAt(request.getCreatedAt());
             doc.setUpdatedAt(request.getUpdatedAt());
@@ -131,7 +135,7 @@ public class ServiceRequestDocument {
         public static ServiceRequest toDomain(ServiceRequestDocument doc) {
             return ServiceRequest.reconstitute(doc.getId(), doc.getOrganisationId(), doc.getRequesterId(), doc.getCatalogItemId(), doc.getCatalogItemCode(),
                     doc.getCatalogItemName(), doc.getAnswers(), ServiceRequestStatus.valueOf(doc.getStatus()), doc.getAssigneeId(), doc.getApprovalRequestId(),
-                    doc.getFulfilmentDueAt(), doc.getStartedAt(), doc.getFulfilledAt(), doc.getFulfilmentNotes(),
+                    doc.getFulfilmentDueAt(), doc.getStartedAt(), doc.getFulfilledAt(), doc.getFulfilmentNotes(), doc.getReturnReason(),
                     doc.getComments().stream().map(CommentDocument::toDomain).collect(Collectors.toList()), doc.getCreatedAt(), doc.getUpdatedAt(),
                     doc.getAuditTrail().stream().map(AuditEntryDocument::toDomain).collect(Collectors.toList()));
         }

@@ -45,14 +45,15 @@ public class ServiceRequest {
     private final UUID catalogItemId;
     private final String catalogItemCode;
     private final String catalogItemName;
-    private final Map<String, String> answers;
+    private Map<String, String> answers;
     private ServiceRequestStatus status;
     private UUID assigneeId;
-    private final UUID approvalRequestId;
+    private UUID approvalRequestId;
     private final Instant fulfilmentDueAt;
     private Instant startedAt;
     private Instant fulfilledAt;
     private String fulfilmentNotes;
+    private String returnReason;
     private final List<Comment> comments;
     private final Instant createdAt;
     private Instant updatedAt;
@@ -80,7 +81,7 @@ public class ServiceRequest {
 
     private ServiceRequest(UUID id, UUID organisationId, UUID requesterId, UUID catalogItemId, String catalogItemCode, String catalogItemName,
                            Map<String, String> answers, ServiceRequestStatus status, UUID assigneeId, UUID approvalRequestId,
-                           Instant fulfilmentDueAt, Instant startedAt, Instant fulfilledAt, String fulfilmentNotes, List<Comment> comments,
+                           Instant fulfilmentDueAt, Instant startedAt, Instant fulfilledAt, String fulfilmentNotes, String returnReason, List<Comment> comments,
                            Instant createdAt, Instant updatedAt, List<RequestAuditEntry> auditTrail) {
         this.id = id;
         this.organisationId = organisationId;
@@ -96,6 +97,7 @@ public class ServiceRequest {
         this.startedAt = startedAt;
         this.fulfilledAt = fulfilledAt;
         this.fulfilmentNotes = fulfilmentNotes;
+        this.returnReason = returnReason;
         this.comments = comments != null ? new ArrayList<>(comments) : new ArrayList<>();
         this.createdAt = createdAt != null ? createdAt : Instant.now();
         this.updatedAt = updatedAt != null ? updatedAt : this.createdAt;
@@ -127,13 +129,13 @@ public class ServiceRequest {
     public static ServiceRequest reconstitute(UUID id, UUID organisationId, UUID requesterId, UUID catalogItemId, String catalogItemCode,
                                               String catalogItemName, Map<String, String> answers, ServiceRequestStatus status, UUID assigneeId,
                                               UUID approvalRequestId, Instant fulfilmentDueAt, Instant startedAt, Instant fulfilledAt,
-                                              String fulfilmentNotes, List<Comment> comments, Instant createdAt, Instant updatedAt,
-                                              List<RequestAuditEntry> auditTrail) {
+                                              String fulfilmentNotes, String returnReason, List<Comment> comments, Instant createdAt,
+                                              Instant updatedAt, List<RequestAuditEntry> auditTrail) {
         if (id == null || organisationId == null || requesterId == null || catalogItemId == null || catalogItemCode == null) {
             throw new IllegalArgumentException("ID, Organisation ID, Requester ID and the catalog item are mandatory to reconstitute a ServiceRequest.");
         }
         return new ServiceRequest(id, organisationId, requesterId, catalogItemId, catalogItemCode, catalogItemName, answers, status, assigneeId,
-                approvalRequestId, fulfilmentDueAt, startedAt, fulfilledAt, fulfilmentNotes, comments, createdAt, updatedAt, auditTrail);
+                approvalRequestId, fulfilmentDueAt, startedAt, fulfilledAt, fulfilmentNotes, returnReason, comments, createdAt, updatedAt, auditTrail);
     }
 
     /** Checks the answers against the item's questions without making anything: unknown key, missing mandatory answer, over-long answer. */
@@ -163,6 +165,40 @@ public class ServiceRequest {
         return transition(ServiceRequestStatus.REJECTED, "REJECTED", executor, "Rejected by the approvers.");
     }
 
+    /** The approvers sent it back with what to fix (an approval outcome of RETURN). PENDING_APPROVAL -&gt; RETURNED; the requester edits it and resubmits. */
+    public RequestAuditEntry returnForChanges(String reason, String executor) {
+        requireStatus(ServiceRequestStatus.PENDING_APPROVAL);
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason saying what to fix is mandatory to return a ServiceRequest.");
+        }
+        this.returnReason = reason;
+        return transition(ServiceRequestStatus.RETURNED, "RETURNED", executor, "Returned for changes: " + reason);
+    }
+
+    /**
+     * Behavior Qualifier: {@code control/resubmit}. RETURNED -&gt; PENDING_APPROVAL (or SUBMITTED if the item needs no approval): the answers
+     * are replaced (checked against the item again) and a NEW approval request starts from stage one; the fulfilment due date does not move,
+     * so the clock keeps running (ADR-034). {@code newApprovalRequestId} is needed exactly when the item has an approval policy.
+     */
+    public RequestAuditEntry resubmit(CatalogItem item, Map<String, String> newAnswers, UUID newApprovalRequestId, String executor) {
+        requireStatus(ServiceRequestStatus.RETURNED);
+        Objects.requireNonNull(item, "The catalog item is mandatory to resubmit a ServiceRequest.");
+        item.requireRequestable();
+        if (!item.getId().equals(catalogItemId)) {
+            throw new IllegalArgumentException("The catalog item is not the one this request was made from.");
+        }
+        if ((item.getApprovalPolicyId() != null) != (newApprovalRequestId != null)) {
+            throw new IllegalArgumentException("An approval request is needed exactly when the catalog item has an approval policy.");
+        }
+        Map<String, String> given = newAnswers == null ? Map.of() : newAnswers;
+        validateAnswers(item.getFields(), given);
+        this.answers = new LinkedHashMap<>(given);
+        this.approvalRequestId = newApprovalRequestId;
+        this.returnReason = null;
+        return transition(newApprovalRequestId != null ? ServiceRequestStatus.PENDING_APPROVAL : ServiceRequestStatus.SUBMITTED, "RESUBMITTED", executor,
+                "Edited and resubmitted" + (newApprovalRequestId != null ? "; waiting for approval again." : "."));
+    }
+
     /** Behavior Qualifier: {@code control/start-fulfilment}. SUBMITTED or APPROVED -&gt; IN_FULFILMENT. */
     public RequestAuditEntry startFulfilment(String executor) {
         requireStatus(ServiceRequestStatus.SUBMITTED, ServiceRequestStatus.APPROVED);
@@ -189,7 +225,7 @@ public class ServiceRequest {
 
     /** Behavior Qualifier: {@code control/cancel} (terminal, replaces DELETE). Before the request is fulfilled. */
     public RequestAuditEntry cancel(String executor) {
-        requireStatus(ServiceRequestStatus.SUBMITTED, ServiceRequestStatus.PENDING_APPROVAL, ServiceRequestStatus.APPROVED, ServiceRequestStatus.IN_FULFILMENT);
+        requireStatus(ServiceRequestStatus.SUBMITTED, ServiceRequestStatus.PENDING_APPROVAL, ServiceRequestStatus.RETURNED, ServiceRequestStatus.APPROVED, ServiceRequestStatus.IN_FULFILMENT);
         return transition(ServiceRequestStatus.CANCELLED, "CANCELLED", executor, "Cancelled.");
     }
 
@@ -275,6 +311,7 @@ public class ServiceRequest {
     public Instant getStartedAt() { return startedAt; }
     public Instant getFulfilledAt() { return fulfilledAt; }
     public String getFulfilmentNotes() { return fulfilmentNotes; }
+    public String getReturnReason() { return returnReason; }
     public List<Comment> getComments() { return Collections.unmodifiableList(comments); }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
@@ -288,10 +325,10 @@ public class ServiceRequest {
      * PENDING_APPROVAL -&gt; APPROVED ---------------------+-&gt; IN_FULFILMENT -&gt; FULFILLED -&gt; CLOSED (terminal)
      *        |
      *        +-&gt; REJECTED (terminal)
-     * SUBMITTED, PENDING_APPROVAL, APPROVED, IN_FULFILMENT -&gt; CANCELLED (terminal)
+     * SUBMITTED, PENDING_APPROVAL, RETURNED, APPROVED, IN_FULFILMENT -&gt; CANCELLED (terminal)
      * </pre>
      */
-    public enum ServiceRequestStatus { SUBMITTED, PENDING_APPROVAL, APPROVED, REJECTED, IN_FULFILMENT, FULFILLED, CLOSED, CANCELLED }
+    public enum ServiceRequestStatus { SUBMITTED, PENDING_APPROVAL, APPROVED, REJECTED, RETURNED, IN_FULFILMENT, FULFILLED, CLOSED, CANCELLED }
 
     /** Immutable forensic ledger entry, mirroring the platform's established audit-trail pattern. */
     public record RequestAuditEntry(Instant occurredAt, String action, String executor,
