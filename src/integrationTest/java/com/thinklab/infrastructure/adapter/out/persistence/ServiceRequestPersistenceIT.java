@@ -213,7 +213,8 @@ class ServiceRequestPersistenceIT implements TestPropertyProvider {
         ServiceRequest open = requests.create(newRequest(organisation, requester, laptop)).block();
         ServiceRequest waiting = requests.create(newRequest(organisation, UUID.randomUUID(), seat)).block();
         ServiceRequest cancelled = requests.create(newRequest(organisation, UUID.randomUUID(), laptop)).block();
-        requests.create(newRequest(UUID.randomUUID(), requester, newItem(UUID.randomUUID(), "LAPTOP", null))).block();
+        UUID otherOrganisation = UUID.randomUUID();
+        requests.create(newRequest(otherOrganisation, requester, newItem(otherOrganisation, "LAPTOP", null))).block();
         var assignment = open.assign(assignee, EXECUTOR);
         requests.save(open, ServiceRequestStatus.SUBMITTED, assignment).block();
         var cancellation = cancelled.cancel(EXECUTOR);
