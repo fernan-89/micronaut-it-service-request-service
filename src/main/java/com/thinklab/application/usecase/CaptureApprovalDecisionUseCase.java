@@ -55,7 +55,7 @@ public class CaptureApprovalDecisionUseCase {
                         return Mono.error(new InvalidServiceRequestStatusException(
                                 "Illegal transition: no approval is waiting for a decision on this ServiceRequest (it is " + serviceRequest.getStatus() + ")."));
                     }
-                    return approvalServicePort.captureDecision(serviceRequest.getApprovalRequestId(), UUID.fromString(executor), request.outcome(), request.comment(), executor)
+                    return approvalServicePort.captureDecision(serviceRequest.getOrganisationId(), serviceRequest.getApprovalRequestId(), UUID.fromString(executor), request.outcome(), request.comment(), executor)
                             .flatMap(outcome -> applyOutcome(serviceRequest, outcome, request.comment(), executor));
                 });
     }

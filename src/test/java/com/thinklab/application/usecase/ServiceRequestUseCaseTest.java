@@ -269,13 +269,13 @@ class ServiceRequestUseCaseTest {
         ServiceRequest waiting = found(pending());
         ServiceRequest plain = found(submitted());
         when(requestRepository.save(any(), any(), any())).thenReturn(Mono.empty());
-        when(approvalService.cancelApprovalRequest(waiting.getApprovalRequestId(), "op-1")).thenReturn(Mono.empty());
+        when(approvalService.cancelApprovalRequest(waiting.getOrganisationId(), waiting.getApprovalRequestId(), "op-1")).thenReturn(Mono.empty());
         CancelServiceRequestUseCase useCase = new CancelServiceRequestUseCase(requestRepository, approvalService);
 
         StepVerifier.create(useCase.execute(waiting.getId(), org, "op-1", null)).verifyComplete();
-        verify(approvalService).cancelApprovalRequest(waiting.getApprovalRequestId(), "op-1");
+        verify(approvalService).cancelApprovalRequest(waiting.getOrganisationId(), waiting.getApprovalRequestId(), "op-1");
         StepVerifier.create(useCase.execute(plain.getId(), org, "op-1", null)).verifyComplete();
-        verify(approvalService, times(1)).cancelApprovalRequest(any(), any());
+        verify(approvalService, times(1)).cancelApprovalRequest(any(), any(), any());
         assertEquals(ServiceRequestStatus.CANCELLED, plain.getStatus());
     }
 
@@ -284,7 +284,7 @@ class ServiceRequestUseCaseTest {
     void cancelBestEffort() {
         ServiceRequest waiting = found(pending());
         when(requestRepository.save(any(), any(), any())).thenReturn(Mono.empty());
-        when(approvalService.cancelApprovalRequest(any(), any())).thenReturn(Mono.error(new IllegalStateException("down")));
+        when(approvalService.cancelApprovalRequest(any(), any(), any())).thenReturn(Mono.error(new IllegalStateException("down")));
 
         StepVerifier.create(new CancelServiceRequestUseCase(requestRepository, approvalService).execute(waiting.getId(), org, "op-1", null)).verifyComplete();
         assertEquals(ServiceRequestStatus.CANCELLED, waiting.getStatus());
@@ -297,12 +297,12 @@ class ServiceRequestUseCaseTest {
         ServiceRequest others = found(submitted());
         UUID unknownId = missing();
         when(requestRepository.save(any(), any(), any())).thenReturn(Mono.empty());
-        when(approvalService.cancelApprovalRequest(any(), any())).thenReturn(Mono.empty());
+        when(approvalService.cancelApprovalRequest(any(), any(), any())).thenReturn(Mono.empty());
         CancelServiceRequestUseCase useCase = new CancelServiceRequestUseCase(requestRepository, approvalService);
 
         StepVerifier.create(useCase.execute(own.getId(), org, owner.toString(), REQUESTER)).verifyComplete();
         assertEquals(ServiceRequestStatus.CANCELLED, own.getStatus());
-        verify(approvalService).cancelApprovalRequest(own.getApprovalRequestId(), owner.toString());
+        verify(approvalService).cancelApprovalRequest(own.getOrganisationId(), own.getApprovalRequestId(), owner.toString());
         StepVerifier.create(useCase.execute(others.getId(), org, UUID.randomUUID().toString(), REQUESTER)).expectError(ServiceRequestNotFoundException.class).verify();
         assertEquals(ServiceRequestStatus.SUBMITTED, others.getStatus());
         StepVerifier.create(useCase.execute(unknownId, org, "op-1", null)).expectError(ServiceRequestNotFoundException.class).verify();
@@ -313,7 +313,7 @@ class ServiceRequestUseCaseTest {
     void captureReturn() {
         when(requestRepository.save(any(), any(), any())).thenReturn(Mono.empty());
         ServiceRequest waiting = found(pending());
-        when(approvalService.captureDecision(any(), any(), eq(DecisionOutcome.RETURN), eq("Say which model"), any())).thenReturn(Mono.just(ApprovalOutcome.RETURNED));
+        when(approvalService.captureDecision(any(), any(), any(), eq(DecisionOutcome.RETURN), eq("Say which model"), any())).thenReturn(Mono.just(ApprovalOutcome.RETURNED));
         CaptureApprovalDecisionUseCase useCase = new CaptureApprovalDecisionUseCase(requestRepository, approvalService);
         String approver = UUID.randomUUID().toString();
 
@@ -329,7 +329,7 @@ class ServiceRequestUseCaseTest {
             StepVerifier.create(useCase.execute(waiting.getId(), org, new CaptureApprovalDecisionRequest(DecisionOutcome.RETURN, blank), approver, null))
                     .expectError(IllegalArgumentException.class).verify();
         }
-        verify(approvalService, times(1)).captureDecision(any(), any(), any(), any(), any());
+        verify(approvalService, times(1)).captureDecision(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -412,7 +412,7 @@ class ServiceRequestUseCaseTest {
     // --- approval capture ---
 
     private Mono<?> capture(ServiceRequest request, ApprovalOutcome outcome, String role) {
-        when(approvalService.captureDecision(any(), any(), any(), any(), any())).thenReturn(Mono.just(outcome));
+        when(approvalService.captureDecision(any(), any(), any(), any(), any(), any())).thenReturn(Mono.just(outcome));
         return new CaptureApprovalDecisionUseCase(requestRepository, approvalService)
                 .execute(request.getId(), org, new CaptureApprovalDecisionRequest(DecisionOutcome.APPROVE, "ok"), UUID.randomUUID().toString(), role);
     }
