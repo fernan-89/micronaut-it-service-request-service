@@ -15,10 +15,10 @@ public interface ApprovalServicePort {
     Mono<UUID> initiateApprovalRequest(UUID organisationId, UUID serviceRequestId, UUID requesterId, UUID policyId, String executor);
 
     /** Forwards one approver's decision and returns the approval's post-decision outcome, read in the same cycle. */
-    Mono<ApprovalOutcome> captureDecision(UUID approvalRequestId, UUID approverId, DecisionOutcome outcome, String comment, String executor);
+    Mono<ApprovalOutcome> captureDecision(UUID organisationId, UUID approvalRequestId, UUID approverId, DecisionOutcome outcome, String comment, String executor);
 
     /** Withdraws a pending approval request, so it leaves the approvers' inboxes. */
-    Mono<Void> cancelApprovalRequest(UUID approvalRequestId, String executor);
+    Mono<Void> cancelApprovalRequest(UUID organisationId, UUID approvalRequestId, String executor);
 
     enum DecisionOutcome { APPROVE, REJECT, RETURN }
 

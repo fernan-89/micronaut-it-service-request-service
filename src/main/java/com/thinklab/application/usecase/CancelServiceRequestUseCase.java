@@ -41,7 +41,7 @@ public class CancelServiceRequestUseCase {
                     var entry = request.cancel(executor);
                     return requestRepository.save(request, before, entry)
                             .then(Mono.defer(() -> before == ServiceRequestStatus.PENDING_APPROVAL
-                                    ? approvalServicePort.cancelApprovalRequest(request.getApprovalRequestId(), executor)
+                                    ? approvalServicePort.cancelApprovalRequest(request.getOrganisationId(), request.getApprovalRequestId(), executor)
                                             .onErrorResume(failure -> {
                                                 log.warn("[USE CASE] ServiceRequest {} was cancelled but its approval request could not be withdrawn: {}", id, failure.getMessage());
                                                 return Mono.empty();

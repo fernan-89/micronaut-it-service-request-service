@@ -53,21 +53,21 @@ public class WorkflowApprovalServiceAdapter implements ApprovalServicePort {
     }
 
     @Override
-    public Mono<ApprovalOutcome> captureDecision(UUID approvalRequestId, UUID approverId, DecisionOutcome outcome, String comment, String executor) {
+    public Mono<ApprovalOutcome> captureDecision(UUID organisationId, UUID approvalRequestId, UUID approverId, DecisionOutcome outcome, String comment, String executor) {
         log.debug("[INTEGRATION] Forwarding decision [{}] from approver [{}] to workflow-approval-service for ApprovalRequest: {}",
                 outcome, approverId, approvalRequestId);
 
-        return apiClient.captureDecision(approvalRequestId, executor, new CaptureDecisionApiRequest(outcome.name(), comment))
+        return apiClient.captureDecision(approvalRequestId, organisationId.toString(), executor, new CaptureDecisionApiRequest(outcome.name(), comment))
                 .map(response -> ApprovalOutcome.valueOf(response.status()))
                 .doOnError(error -> log.error("[INTEGRATION FAILURE] Failed to capture decision for ApprovalRequest: {}", approvalRequestId, error))
                 .onErrorMap(WorkflowApprovalServiceAdapter::relayConflict);
     }
 
     @Override
-    public Mono<Void> cancelApprovalRequest(UUID approvalRequestId, String executor) {
+    public Mono<Void> cancelApprovalRequest(UUID organisationId, UUID approvalRequestId, String executor) {
         log.debug("[INTEGRATION] Withdrawing ApprovalRequest {} on workflow-approval-service", approvalRequestId);
 
-        return apiClient.cancel(approvalRequestId, executor)
+        return apiClient.cancel(approvalRequestId, organisationId.toString(), executor)
                 .doOnError(error -> log.error("[INTEGRATION FAILURE] Failed to withdraw ApprovalRequest: {}", approvalRequestId, error))
                 .onErrorMap(error -> new IllegalStateException(UNAVAILABLE, error));
     }
@@ -114,10 +114,11 @@ interface WorkflowApprovalApiClient {
     @Put("/{id}/decision/capture")
     Mono<WorkflowApprovalServiceAdapter.ApprovalRequestApiResponse> captureDecision(
             @PathVariable UUID id,
+            @Header("X-Tenant-Id") String tenantId,
             @Header("X-Executor") String executor,
             @Body WorkflowApprovalServiceAdapter.CaptureDecisionApiRequest request
     );
 
     @Put("/{id}/control/cancel")
-    Mono<Void> cancel(@PathVariable UUID id, @Header("X-Executor") String executor);
+    Mono<Void> cancel(@PathVariable UUID id, @Header("X-Tenant-Id") String tenantId, @Header("X-Executor") String executor);
 }

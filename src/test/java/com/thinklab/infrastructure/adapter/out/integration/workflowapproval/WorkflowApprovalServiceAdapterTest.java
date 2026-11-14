@@ -35,6 +35,7 @@ class WorkflowApprovalServiceAdapterTest {
 
     @Mock private WorkflowApprovalApiClient apiClient;
 
+    private final UUID org = UUID.randomUUID();
     private WorkflowApprovalServiceAdapter adapter;
 
     @BeforeEach
@@ -71,14 +72,14 @@ class WorkflowApprovalServiceAdapterTest {
     @DisplayName("infrastructure failures are hidden behind a dependency-failure error")
     void failures() {
         when(apiClient.initiate(any(), any(), any())).thenReturn(Mono.error(new RuntimeException("refused")));
-        when(apiClient.captureDecision(any(), any(), any())).thenReturn(Mono.error(new RuntimeException("refused")));
-        when(apiClient.cancel(any(), any())).thenReturn(Mono.error(new RuntimeException("refused")));
+        when(apiClient.captureDecision(any(), any(), any(), any())).thenReturn(Mono.error(new RuntimeException("refused")));
+        when(apiClient.cancel(any(), any(), any())).thenReturn(Mono.error(new RuntimeException("refused")));
 
         StepVerifier.create(adapter.initiateApprovalRequest(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "op-1"))
                 .expectErrorSatisfies(WorkflowApprovalServiceAdapterTest::assertUnavailable).verify();
-        StepVerifier.create(adapter.captureDecision(UUID.randomUUID(), UUID.randomUUID(), DecisionOutcome.APPROVE, null, "op-1"))
+        StepVerifier.create(adapter.captureDecision(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), DecisionOutcome.APPROVE, null, "op-1"))
                 .expectErrorSatisfies(WorkflowApprovalServiceAdapterTest::assertUnavailable).verify();
-        StepVerifier.create(adapter.cancelApprovalRequest(UUID.randomUUID(), "op-1"))
+        StepVerifier.create(adapter.cancelApprovalRequest(UUID.randomUUID(), UUID.randomUUID(), "op-1"))
                 .expectErrorSatisfies(WorkflowApprovalServiceAdapterTest::assertUnavailable).verify();
     }
 
@@ -86,13 +87,13 @@ class WorkflowApprovalServiceAdapterTest {
     @DisplayName("captureDecision forwards the outcome and comment and maps the resolved status back")
     void capture() {
         UUID approvalId = UUID.randomUUID();
-        when(apiClient.captureDecision(eq(approvalId), eq("approver-1"), any())).thenReturn(Mono.just(new ApprovalRequestApiResponse(approvalId, "APPROVED")));
+        when(apiClient.captureDecision(eq(approvalId), eq(org.toString()), eq("approver-1"), any())).thenReturn(Mono.just(new ApprovalRequestApiResponse(approvalId, "APPROVED")));
 
-        StepVerifier.create(adapter.captureDecision(approvalId, UUID.randomUUID(), DecisionOutcome.APPROVE, "fine", "approver-1"))
+        StepVerifier.create(adapter.captureDecision(org, approvalId, UUID.randomUUID(), DecisionOutcome.APPROVE, "fine", "approver-1"))
                 .expectNext(ApprovalOutcome.APPROVED).verifyComplete();
 
         ArgumentCaptor<CaptureDecisionApiRequest> body = ArgumentCaptor.forClass(CaptureDecisionApiRequest.class);
-        verify(apiClient).captureDecision(eq(approvalId), eq("approver-1"), body.capture());
+        verify(apiClient).captureDecision(eq(approvalId), eq(org.toString()), eq("approver-1"), body.capture());
         assertEquals("APPROVE", body.getValue().outcome());
         assertEquals("fine", body.getValue().comment());
     }
@@ -103,13 +104,13 @@ class WorkflowApprovalServiceAdapterTest {
         var withBody = new HttpClientResponseException("Conflict", HttpResponse.status(HttpStatus.CONFLICT).body(Map.of("detail", "approver is not eligible")));
         var withoutBody = new HttpClientResponseException("Conflict without body", HttpResponse.status(HttpStatus.CONFLICT));
         var notFound = new HttpClientResponseException("Not Found", HttpResponse.status(HttpStatus.NOT_FOUND));
-        when(apiClient.captureDecision(any(), any(), any())).thenReturn(Mono.error(withBody)).thenReturn(Mono.error(withoutBody)).thenReturn(Mono.error(notFound));
+        when(apiClient.captureDecision(any(), any(), any(), any())).thenReturn(Mono.error(withBody)).thenReturn(Mono.error(withoutBody)).thenReturn(Mono.error(notFound));
 
-        StepVerifier.create(adapter.captureDecision(UUID.randomUUID(), UUID.randomUUID(), DecisionOutcome.APPROVE, null, "op-1"))
+        StepVerifier.create(adapter.captureDecision(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), DecisionOutcome.APPROVE, null, "op-1"))
                 .expectErrorSatisfies(error -> { assertInstanceOf(InvalidServiceRequestStatusException.class, error); assertEquals("approver is not eligible", error.getMessage()); }).verify();
-        StepVerifier.create(adapter.captureDecision(UUID.randomUUID(), UUID.randomUUID(), DecisionOutcome.APPROVE, null, "op-1"))
+        StepVerifier.create(adapter.captureDecision(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), DecisionOutcome.APPROVE, null, "op-1"))
                 .expectErrorSatisfies(error -> { assertInstanceOf(InvalidServiceRequestStatusException.class, error); assertEquals("Conflict without body", error.getMessage()); }).verify();
-        StepVerifier.create(adapter.captureDecision(UUID.randomUUID(), UUID.randomUUID(), DecisionOutcome.APPROVE, null, "op-1"))
+        StepVerifier.create(adapter.captureDecision(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), DecisionOutcome.APPROVE, null, "op-1"))
                 .expectErrorSatisfies(WorkflowApprovalServiceAdapterTest::assertUnavailable).verify();
     }
 
@@ -117,9 +118,9 @@ class WorkflowApprovalServiceAdapterTest {
     @DisplayName("cancelApprovalRequest withdraws the approval request")
     void cancel() {
         UUID approvalId = UUID.randomUUID();
-        when(apiClient.cancel(approvalId, "op-1")).thenReturn(Mono.empty());
+        when(apiClient.cancel(approvalId, org.toString(), "op-1")).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.cancelApprovalRequest(approvalId, "op-1")).verifyComplete();
-        verify(apiClient).cancel(approvalId, "op-1");
+        StepVerifier.create(adapter.cancelApprovalRequest(org, approvalId, "op-1")).verifyComplete();
+        verify(apiClient).cancel(approvalId, org.toString(), "op-1");
     }
 }
